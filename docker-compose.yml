@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+
+  # ── RAG FastAPI App ──────────────────────────────────
+  app:
+    build: .
+    container_name: rag-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./logs:/app/logs        # persist logs on host
+      - ./uploads:/app/uploads  # persist uploads temporarily
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Redis ────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: rag-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --loglevel warning
+    volumes:
+      - redis-data:/data   # persist Redis data across restarts
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis-data:
+
+networks:
+  rag-network:
+    driver: bridge

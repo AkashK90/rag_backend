@@ -1,0 +1,72 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-base:    #07080d;
+  --bg-surface: #0e1018;
+  --bg-raised:  #161820;
+  --bg-hover:   #1e2030;
+  --bg-active:  #252840;
+
+  --border:     #1f2235;
+  --border-md:  #2a2e4a;
+  --border-hi:  #3a3f60;
+
+  --text-primary:   #eef0f8;
+  --text-secondary: #8b90b0;
+  --text-muted:     #4a5070;
+  --text-disabled:  #2a2e4a;
+
+  --blue:       #4f8ef7;
+  --blue-dim:   rgba(79,142,247,0.12);
+  --blue-glow:  rgba(79,142,247,0.25);
+
+  --green:      #2dd4a0;
+  --green-dim:  rgba(45,212,160,0.12);
+
+  --amber:      #f5a623;
+  --amber-dim:  rgba(245,166,35,0.12);
+
+  --red:        #f05252;
+  --red-dim:    rgba(240,82,82,0.12);
+
+  --purple:     #a78bfa;
+  --purple-dim: rgba(167,139,250,0.12);
+
+  --mono: 'DM Mono', monospace;
+  --sans: 'Outfit', sans-serif;
+
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 16px;
+
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hi); }
+
+button { cursor: pointer; font-family: var(--sans); }
+input, textarea, select { font-family: var(--sans); }
+a { text-decoration: none; color: inherit; }
+
+/* Animations */
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse   { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes spin    { to { transform: rotate(360deg); } }
+
+.animate-fade  { animation: fadeIn  0.3s ease; }
+.animate-slide { animation: slideUp 0.35s ease; }
+.animate-pulse { animation: pulse 1.5s infinite; }
+.animate-spin  { animation: spin 0.8s linear infinite; }
