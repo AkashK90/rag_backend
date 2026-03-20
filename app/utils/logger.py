@@ -1,5 +1,4 @@
 import sys
-import json
 from pathlib import Path
 from loguru import logger
 from app.core.config import get_settings
@@ -32,7 +31,7 @@ logger.add(
 )
 
 
-def log_conversation(
+async def log_conversation(
     session_id: str,
     question: str,
     answer: str,
@@ -40,11 +39,12 @@ def log_conversation(
     response_time_ms: int,
     cache_hit: bool,
 ):
-    """Append one Q&A record to conversations.jsonl"""
+    """Persist one Q&A record to MongoDB."""
     from datetime import datetime, timezone
+    from app.services.mongo_service import get_db
 
     record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(timezone.utc),
         "session_id": session_id,
         "question": question,
         "answer": answer,
@@ -52,5 +52,8 @@ def log_conversation(
         "response_time_ms": response_time_ms,
         "cache_hit": cache_hit,
     }
-    with open("logs/conversations.jsonl", "a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+    try:
+        db = await get_db()
+        await db["conversations"].insert_one(record)
+    except Exception as e:
+        logger.warning(f"Conversation log failed: {e}")

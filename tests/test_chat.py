@@ -16,7 +16,6 @@ async def test_chat_missing_session():
         response = await client.post("/api/chat", json={"question": "What is this?"})
     assert response.status_code == 422  # Validation error — session_id missing
 
-
 @pytest.mark.asyncio
 async def test_chat_response_shape():
     """

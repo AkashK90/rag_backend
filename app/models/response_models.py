@@ -16,7 +16,7 @@ class UploadResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     pinecone: str
-    redis: str
+    mongodb: str
     openai: str
 
 class SessionMessage(BaseModel):
@@ -31,6 +31,7 @@ class SessionResponse(BaseModel):
 class CacheStatsResponse(BaseModel):
     total_cached_keys: int
     ttl_seconds: int
+
 
 class DeleteDocumentResponse(BaseModel):
     message: str

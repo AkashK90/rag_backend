@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 RAG Backend shutting down...")
 
 
-# ── App init ──────────────────────────────────────────
+# ── App init ──────────────────
 app = FastAPI(
     title="RAG Chatbot API",
     description="""
@@ -36,7 +36,7 @@ app = FastAPI(
                     ### 👤 User Endpoints (Public)
                     - `POST /api/chat` — Ask a question, get an answer with memory
 
-                    ### 🛠️ Admin Endpoints (Protected — requires X-Admin-API-Key header)
+                    ### 🛠️ Admin Endpoints (Protected — requires Basic Auth)
                     - `POST /admin/upload` — Upload PDF or TXT to knowledge base
                     - `DELETE /admin/document/{filename}` — Remove a document
                     - `GET /admin/sessions` — List all active sessions
@@ -45,7 +45,7 @@ app = FastAPI(
                     - `GET /admin/logs/app` — View system logs
                     - `GET /admin/cache/stats` — View cache statistics
                     - `DELETE /admin/cache/clear` — Clear all cache
-                    - `GET /admin/health` — Health check (Pinecone, Redis, OpenAI)
+                    - `GET /admin/health` — Health check (Pinecone, MongoDB, OpenAI)
                     """,
     version="1.0.0",
     lifespan=lifespan,
@@ -61,7 +61,7 @@ app.add_middleware(SlowAPIMiddleware)
 # ── CORS ──────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Lock this to your frontend domain in production
+    allow_origins=[ "https://partners.bncglobal.in"],  # Lock this to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,7 +71,6 @@ app.add_middleware(
 app.include_router(user_router)
 app.include_router(admin_router)
 
-
 # ── Global error handler ──────────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -80,7 +79,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Internal server error. Please try again later."},
     )
-
 
 # ── Root ──────────────────────────────────────────────
 @app.get("/", tags=["Root"])

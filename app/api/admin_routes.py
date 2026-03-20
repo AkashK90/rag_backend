@@ -1,5 +1,4 @@
 import os
-import json
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from loguru import logger
@@ -13,7 +12,8 @@ from app.models.response_models import (
 )
 from app.services.ingestion_service import ingest_document, delete_document_by_filename
 from app.services.memory_service import get_session_as_dict, list_all_sessions, delete_session
-from app.services.cache_service import clear_all_cache, get_cache_stats, get_redis
+from app.services.cache_service import clear_all_cache, get_cache_stats
+from app.services.mongo_service import get_db
 from app.core.dependencies import get_pinecone_index, get_embeddings
 
 settings = get_settings()
@@ -29,7 +29,7 @@ MAX_BYTES = settings.max_upload_size_mb * 1024 * 1024
 async def upload_document(file: UploadFile = File(...)):
     """
     🛠️ Upload a PDF or TXT file to ingest into the knowledge base.
-    Protected by X-Admin-API-Key header.
+    Protected by HTTP Basic Auth.
     """
     allowed_types = {"application/pdf", "text/plain"}
     if file.content_type not in allowed_types:
@@ -102,7 +102,7 @@ async def get_session(session_id: str):
 
 @router.delete("/sessions/{session_id}")
 async def remove_session(session_id: str):
-    """🛠️ Delete a specific session from Redis."""
+    """🛠️ Delete a specific session from MongoDB."""
     deleted = await delete_session(session_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
@@ -113,17 +113,24 @@ async def remove_session(session_id: str):
 @router.get("/logs/conversations")
 async def get_conversation_logs(limit: int = 100):
     """
-    🛠️ Return last N conversation records from conversations.jsonl
+    🛠️ Return last N conversation records from MongoDB
     """
-    log_path = Path("logs/conversations.jsonl")
-    if not log_path.exists():
-        return {"conversations": [], "total": 0}
-
-    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
-    records = [json.loads(line) for line in lines if line.strip()]
-    recent = records[-limit:]
-    recent.reverse()  # newest first
-    return {"conversations": recent, "total": len(records)}
+    db = await get_db()
+    total = await db["conversations"].count_documents({})
+    cursor = (
+        db["conversations"]
+        .find({})
+        .sort("timestamp", -1)
+        .limit(limit)
+    )
+    conversations = []
+    async for doc in cursor:
+        doc.pop("_id", None)
+        ts = doc.get("timestamp")
+        if ts:
+            doc["timestamp"] = ts.isoformat()
+        conversations.append(doc)
+    return {"conversations": conversations, "total": int(total)}
 
 
 @router.get("/logs/app")
@@ -159,14 +166,14 @@ async def clear_cache(body: ClearCacheRequest):
 # ── Health Check ──────────────────────────────────────
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """🛠️ Check connectivity to Pinecone, Redis, and OpenAI."""
-    # Check Redis
-    redis_status = "ok"
+    """🛠️ Check connectivity to Pinecone, MongoDB, and OpenAI."""
+    # Check MongoDB
+    mongodb_status = "ok"
     try:
-        r = await get_redis()
-        await r.ping()
+        db = await get_db()
+        await db.command("ping")
     except Exception as e:
-        redis_status = f"error: {e}"
+        mongodb_status = f"error: {e}"
 
     # Check Pinecone
     pinecone_status = "ok"
@@ -185,13 +192,13 @@ async def health_check():
         openai_status = f"error: {e}"
 
     overall = "healthy" if all(
-        s == "ok" for s in [redis_status, pinecone_status, openai_status]
+        s == "ok" for s in [mongodb_status, pinecone_status, openai_status]
     ) else "degraded"
 
     return HealthResponse(
         status=overall,
         pinecone=pinecone_status,
-        redis=redis_status,
+        mongodb=mongodb_status,
         openai=openai_status,
     )
 

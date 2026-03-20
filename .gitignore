@@ -14,7 +14,6 @@ build/
 .venv/
 venv/
 env/
-
 node_modules/
 # Logs (don't commit logs)
 logs/
@@ -26,7 +25,7 @@ uploads/
 
 # Docker
 .dockerignore
-
+__pycache__/
 # IDE
 .vscode/
 .idea/

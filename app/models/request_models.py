@@ -10,3 +10,4 @@ class ChatRequest(BaseModel):
 
 class ClearCacheRequest(BaseModel):
     confirm: bool = Field(..., description="Must be true to confirm cache clear")
+

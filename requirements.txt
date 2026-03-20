@@ -18,8 +18,8 @@ openai==1.51.0
 # Pinecone
 pinecone-client==5.0.1
 
-# Redis
-redis[asyncio]==5.1.0
+# MongoDB
+motor==3.6.0
 
 # PDF parsing
 pymupdf==1.24.10

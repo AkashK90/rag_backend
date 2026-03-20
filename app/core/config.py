@@ -13,19 +13,21 @@ class Settings(BaseSettings):
     pinecone_index_name: str
     pinecone_environment: str
 
-    # Redis
-    redis_url: str = "redis://localhost:6379"
+    # MongoDB
+    mongodb_uri: str = "mongodb://localhost:27017"
+    mongodb_db: str = "rag_backend"
 
     # Admin
-    admin_api_key: str
+    admin_username: str = "admin"
+    admin_password: str = "change-me"
 
     # App
     app_env: str = 'development'  # "production"
     log_level: str = "INFO"
     max_upload_size_mb: int = 50
-    chunk_size: int = 500
-    chunk_overlap: int = 50
-    top_k_results: int = 5
+    chunk_size: int = 800
+    chunk_overlap: int = 80
+    top_k_results: int = 3
     cache_ttl_seconds: int = 3600
     session_ttl_seconds: int = 86400
 

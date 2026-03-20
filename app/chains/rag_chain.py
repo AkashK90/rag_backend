@@ -1,6 +1,6 @@
 import time
 from loguru import logger
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from app.services.cache_service import get_cached_answer, set_cached_answer
 from app.services.memory_service import get_session_history, save_session_history
@@ -26,7 +26,7 @@ async def run_rag_chain(question: str, session_id: str) -> dict:
     cached = await get_cached_answer(question)
     if cached:
         elapsed = int((time.time() - start_time) * 1000)
-        log_conversation(
+        await log_conversation(
             session_id=session_id,
             question=question,
             answer=cached["answer"],
@@ -59,7 +59,7 @@ async def run_rag_chain(question: str, session_id: str) -> dict:
 
     # ── Step 7: Log conversation ──────────────────────
     elapsed = int((time.time() - start_time) * 1000)
-    log_conversation(
+    await log_conversation(
         session_id=session_id,
         question=question,
         answer=answer,

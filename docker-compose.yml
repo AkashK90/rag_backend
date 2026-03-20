@@ -12,12 +12,12 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=mongodb://mongodb:27017
     volumes:
       - ./logs:/app/logs        # persist logs on host
       - ./uploads:/app/uploads  # persist uploads temporarily
     depends_on:
-      redis:
+      mongodb:
         condition: service_healthy
     networks:
       - rag-network
@@ -28,31 +28,25 @@ services:
       retries: 3
       start_period: 15s
 
-  # ── Redis ────────────────────────────────────────────
-  redis:
-    image: redis:7.2-alpine
-    container_name: rag-redis
+  # ── MongoDB ────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: rag-mongodb
     restart: always
     ports:
-      - "6379:6379"
-    command: >
-      redis-server
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --save 60 1
-      --loglevel warning
+      - "27017:27017"
     volumes:
-      - redis-data:/data   # persist Redis data across restarts
+      - mongodb-data:/data/db   # persist MongoDB data across restarts
     networks:
       - rag-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
 
 volumes:
-  redis-data:
+  mongodb-data:
 
 networks:
   rag-network:

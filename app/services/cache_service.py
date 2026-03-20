@@ -1,49 +1,49 @@
-import json
-import numpy as np
-import redis.asyncio as aioredis
+from datetime import datetime
 from loguru import logger
 from app.core.config import get_settings
 from app.utils.helpers import make_cache_key
+from app.services.mongo_service import get_db, compute_expire_at
 
 settings = get_settings()
 
-# ─── Redis client (shared) ────────────────────────────
-_redis: aioredis.Redis | None = None
-
-
-async def get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(
-            settings.redis_url,
-            encoding="utf-8",
-            decode_responses=True,
-            socket_connect_timeout=5,
-        )
-    return _redis
-
-# ─── Exact-match cache ────────────────────────────────
+# ─── Exact-match cache (MongoDB) ──────────────────────
 
 async def get_cached_answer(question: str) -> dict | None:
     """Return cached answer dict or None on miss."""
     try:
-        r = await get_redis()
         key = f"cache:exact:{make_cache_key(question)}"
-        value = await r.get(key)
-        if value:
-            logger.info(f"Cache HIT for question: {question[:60]}...")
-            return json.loads(value)
+        db = await get_db()
+        doc = await db["cache"].find_one({"key": key})
+        if not doc:
+            return None
+        expire_at = doc.get("expire_at")
+        if expire_at and expire_at <= datetime.utcnow():
+            await db["cache"].delete_one({"_id": doc["_id"]})
+            return None
+        logger.info(f"Cache HIT for question: {question[:60]}...")
+        return doc.get("answer_data")
     except Exception as e:
         logger.warning(f"Cache GET failed: {e}")
     return None
 
 
 async def set_cached_answer(question: str, answer_data: dict) -> None:
-    """Store answer in Redis with TTL."""
+    """Store answer in MongoDB with TTL."""
     try:
-        r = await get_redis()
         key = f"cache:exact:{make_cache_key(question)}"
-        await r.setex(key, settings.cache_ttl_seconds, json.dumps(answer_data))
+        db = await get_db()
+        await db["cache"].update_one(
+            {"key": key},
+            {
+                "$set": {
+                    "key": key,
+                    "question": question,
+                    "answer_data": answer_data,
+                    "expire_at": compute_expire_at(settings.cache_ttl_seconds),
+                }
+            },
+            upsert=True,
+        )
         logger.info(f"Cache SET for question: {question[:60]}...")
     except Exception as e:
         logger.warning(f"Cache SET failed: {e}")
@@ -52,12 +52,10 @@ async def set_cached_answer(question: str, answer_data: dict) -> None:
 async def clear_all_cache() -> int:
     """Delete all cache keys. Returns count deleted."""
     try:
-        r = await get_redis()
-        keys = await r.keys("cache:exact:*")
-        if keys:
-            await r.delete(*keys)
-        logger.info(f"Cache cleared: {len(keys)} keys deleted")
-        return len(keys)
+        db = await get_db()
+        result = await db["cache"].delete_many({})
+        logger.info(f"Cache cleared: {result.deleted_count} keys deleted")
+        return int(result.deleted_count)
     except Exception as e:
         logger.warning(f"Cache CLEAR failed: {e}")
         return 0
@@ -66,9 +64,10 @@ async def clear_all_cache() -> int:
 async def get_cache_stats() -> dict:
     """Return cache statistics."""
     try:
-        r = await get_redis()
-        keys = await r.keys("cache:exact:*")
-        return {"total_cached_keys": len(keys), "ttl_seconds": settings.cache_ttl_seconds}
+        db = await get_db()
+        now = datetime.utcnow()
+        count = await db["cache"].count_documents({"expire_at": {"$gt": now}})
+        return {"total_cached_keys": int(count), "ttl_seconds": settings.cache_ttl_seconds}
     except Exception as e:
         logger.warning(f"Cache STATS failed: {e}")
         return {"total_cached_keys": 0, "ttl_seconds": settings.cache_ttl_seconds}

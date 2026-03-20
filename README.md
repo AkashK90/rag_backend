@@ -1,7 +1,7 @@
 # RAG Chatbot Backend — Complete Developer Guide
 
 A production-grade **Retrieval-Augmented Generation (RAG)** backend built with FastAPI,
-OpenAI GPT-4, Pinecone, Redis, and LangChain. Designed for 50+ concurrent users with
+OpenAI GPT-4, Pinecone, MongoDB, and LangChain. Designed for 50+ concurrent users with
 document versioning, session memory, intelligent caching, and full developer observability.
 
 ---
@@ -82,9 +82,10 @@ You → POST /admin/upload (PDF or TXT)
 
 ```
 User → POST /api/chat  { "question": "...", "session_id": "..." }
+No authorization is required for `/api/chat` (public endpoint).
          │
          ▼
-  ① CACHE CHECK       Is this question already cached in Redis?
+  ① CACHE CHECK       Is this question already cached in MongoDB?
          │             YES → return cached answer in ~5ms ⚡
          │ (cache miss)
          ▼
@@ -94,7 +95,7 @@ User → POST /api/chat  { "question": "...", "session_id": "..." }
   ③ RETRIEVE          Search Pinecone for top-5 most similar document chunks
          │             Returns relevant text + source filenames and page numbers
          ▼
-  ④ LOAD MEMORY       Fetch conversation history for session_id from Redis
+  ④ LOAD MEMORY       Fetch conversation history for session_id from MongoDB
          │
          ▼
   ⑤ BUILD PROMPT      System prompt + context chunks + history + current question
@@ -103,7 +104,7 @@ User → POST /api/chat  { "question": "...", "session_id": "..." }
   ⑥ GENERATE          Send full prompt to GPT-4 (temperature 0.2 for factual answers)
          │
          ▼
-  ⑦ SAVE AND LOG      Store answer in Redis cache + update session memory + log to file
+  ⑦ SAVE AND LOG      Store answer in MongoDB cache + update session memory + log to file
          │
          ▼
   ✅ Return { answer, sources, session_id, response_time_ms, cache_hit }
@@ -119,7 +120,7 @@ rag-backend/
 ├── main.py                          Entry point — FastAPI app, middleware, routers
 ├── requirements.txt                 All Python dependencies with pinned versions
 ├── Dockerfile                       Production container (Python 3.11-slim)
-├── docker-compose.yml               Runs app (4 workers) + Redis together
+├── docker-compose.yml               Runs app (4 workers) + MongoDB together
 ├── pytest.ini                       Test configuration (asyncio_mode = auto)
 ├── .env.example                     Template for environment variables (safe to share)
 ├── .gitignore                       Excludes .env, logs, uploads, __pycache__
@@ -130,12 +131,13 @@ rag-backend/
 │   ├── api/                         HTTP route handlers (what the outside world calls)
 │   │   ├── __init__.py
 │   │   ├── user_routes.py           👤 PUBLIC  — POST /api/chat only
+No authorization is required for `/api/chat` (public endpoint).
 │   │   └── admin_routes.py          🛠️ ADMIN   — all /admin/* endpoints
 │   │
 │   ├── core/                        Shared infrastructure and config
 │   │   ├── __init__.py
 │   │   ├── config.py                Reads .env into a validated Settings object
-│   │   ├── security.py              Validates X-Admin-API-Key on all admin routes
+│   │   ├── security.py              Validates Basic Auth on all admin routes
 │   │   └── dependencies.py          Shared Pinecone index + OpenAI embedding instances
 │   │
 │   ├── services/                    Business logic — each file does one job
@@ -143,8 +145,8 @@ rag-backend/
 │   │   ├── ingestion_service.py     Load file → chunk → embed → store → register version
 │   │   ├── retrieval_service.py     Embed query → search Pinecone → return top-K chunks
 │   │   ├── generation_service.py    Build prompt → call GPT-4 → return answer string
-│   │   ├── memory_service.py        Store and retrieve chat history in Redis per session
-│   │   ├── cache_service.py         Redis answer cache with TTL expiry
+│   │   ├── memory_service.py        Store and retrieve chat history in MongoDB per session
+│   │   ├── cache_service.py         MongoDB answer cache with TTL expiry
 │   │   └── document_version_service.py  Registry of document versions in JSON file
 │   │
 │   ├── chains/
@@ -158,13 +160,13 @@ rag-backend/
 │   │
 │   └── utils/
 │       ├── __init__.py
-│       ├── logger.py                Loguru setup — console + app.log + conversations.jsonl
+│       ├── logger.py                Loguru setup — console + app.log + MongoDB conversations
 │       └── helpers.py               make_cache_key(), extract_source_label(), truncate_text()
 │
 ├── logs/                            Created automatically on first startup
 │   ├── app.log                      System events, errors, warnings — rotates at 10MB, kept 30 days
 │   ├── access.log                   HTTP access log from Gunicorn (Docker mode only)
-│   └── conversations.jsonl          Every Q&A record with metadata (one JSON object per line)
+│   └── MongoDB conversations          Every Q&A record with metadata
 │
 ├── uploads/                         Temporary storage during ingestion — files deleted after processing
 │
@@ -175,7 +177,7 @@ rag-backend/
 │   ├── __init__.py
 │   ├── test_chat.py                 Validation tests + live chat pipeline test
 │   ├── test_ingestion.py            Auth tests + file type tests + live upload test
-│   └── test_cache.py                Cache key logic tests + Redis integration test
+│   └── test_cache.py                Cache key logic tests + MongoDB integration test
 │
 └── optional/                        Enhancement tools — use after backend is stable
     └── admin-panel/                 Full React developer console (see Section 20)
@@ -220,7 +222,7 @@ rag-backend/
 | Vector Database | Pinecone | 5.0.1 | Managed vector similarity search |
 | RAG Framework | LangChain | 0.3.1 | Document loaders, text splitters, chains |
 | PDF Parsing | PyMuPDF | 1.24.10 | Extracts text from PDFs page by page |
-| Cache + Memory | Redis 7.2 | via Docker | Response cache + per-session chat history |
+| Cache + Memory | MongoDB 7 | via Docker | Response cache + per-session chat history |
 | Logging | Loguru | 0.7.2 | Structured logs with automatic rotation |
 | Retry Logic | Tenacity | 9.0.0 | Auto-retry on OpenAI and Pinecone failures |
 | Rate Limiting | SlowAPI | 0.1.9 | 60 requests per minute per IP address |
@@ -242,10 +244,11 @@ rag-backend/
 │ Gets answers     │ Monitors sessions    │ Generates vectors │
 │ Conversation     │ Views logs and errors│ Searches Pinecone │
 │ memory per       │ Manages document     │ Calls GPT-4       │
-│ session ID       │ versions + rollback  │ Manages Redis     │
+│ session ID       │ versions + rollback  │ Manages MongoDB     │
 │                  │ Controls cache       │ Logs everything   │
 ├──────────────────┼──────────────────────┼───────────────────┤
 │ POST /api/chat   │ POST /admin/upload   │ Internal — not    │
+No authorization is required for `/api/chat` (public endpoint).
 │ (public, no key) │ GET  /admin/sessions │ exposed via HTTP  │
 │                  │ GET  /admin/logs/*   │                   │
 │                  │ GET  /admin/health   │                   │
@@ -271,7 +274,7 @@ Before starting, make sure you have everything below:
 - OpenAI GPT-4 generation: $5–15
 - OpenAI Embeddings: $0.50
 - Pinecone Free Tier: $0
-- Redis (self-hosted via Docker): $0
+- MongoDB (self-hosted via Docker): $0
 
 ---
 
@@ -299,12 +302,15 @@ PINECONE_API_KEY=pcsk-...            # Your Pinecone API key
 PINECONE_INDEX_NAME=rag-index        # Must exactly match the index name you create in Step 2
 PINECONE_ENVIRONMENT=us-east-1       # Must match your Pinecone index region
 
-# ── Redis ─────────────────────────────────────────────────
-REDIS_URL=redis://redis:6379         # Keep this for Docker setup
-                                     # Change to redis://localhost:6379 for local setup
+# ── MongoDB ─────────────────────────────────────────────────
+MONGODB_URI=mongodb://mongodb:27017         # Keep this for Docker setup
+                                     # Change to mongodb://localhost:27017 for local setup
+MONGODB_DB=rag_backend                       # Database name for cache + sessions
 
 # ── Admin Security ─────────────────────────────────────────
-ADMIN_API_KEY=change-this-to-a-long-random-secret   # Your private developer key
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-this-to-a-long-random-secret
+ADMIN_TOKEN_TTL_SECONDS=86400
 
 # ── App Settings (optional — defaults are good to start) ──
 APP_ENV=production
@@ -355,7 +361,7 @@ rag-backend/
 
 ## 9. Step 3 — Run with Docker (Recommended)
 
-One command starts both the app and Redis:
+One command starts both the app and MongoDB:
 
 ```bash
 # Build containers and start in the background
@@ -364,7 +370,7 @@ docker-compose up --build -d
 
 This starts:
 - **`rag-backend`** — FastAPI with 4 Gunicorn workers on port `8000`
-- **`rag-redis`** — Redis 7.2 on port `6379` with a persistent data volume
+- **`rag-mongodb`** — MongoDB 7 on port `27017` with a persistent data volume
 
 ```bash
 # Verify both containers are running
@@ -373,13 +379,13 @@ docker-compose ps
 # Watch live application logs
 docker-compose logs -f app
 
-# Watch Redis logs
-docker-compose logs -f redis
+# Watch MongoDB logs
+docker-compose logs -f mongodb
 
 # Stop all services
 docker-compose down
 
-# Stop and wipe all data including Redis cache and sessions
+# Stop and wipe all data including MongoDB cache and sessions
 docker-compose down -v
 ```
 
@@ -421,17 +427,13 @@ venv\Scripts\activate           # Windows
 pip install -r requirements.txt
 ```
 
-> ⚠️ You still need Redis running. Install it separately:
+> ⚠️ You still need MongoDB running. Easiest option (all OS):
 >
-> macOS:   `brew install redis && brew services start redis`
->
-> Ubuntu:  `sudo apt install redis-server && sudo service redis start`
->
-> Windows: `docker run -d -p 6379:6379 redis:7.2-alpine`
+> `docker run -d --name rag-mongodb -p 27017:27017 mongo:7`
 
-Also update your `.env` for local Redis:
+Also update your `.env` for local MongoDB:
 ```env
-REDIS_URL=redis://localhost:6379
+MONGODB_URI=mongodb://localhost:27017
 ```
 
 ```bash
@@ -448,6 +450,7 @@ rag-backend/
 ├── main.py                         ← FastAPI app starts here
 ├── app/
 │   ├── api/user_routes.py          ← Registers POST /api/chat
+No authorization is required for `/api/chat` (public endpoint).
 │   ├── api/admin_routes.py         ← Registers all /admin/* routes
 │   ├── core/config.py              ← Loads settings from .env
 │   ├── core/security.py            ← Admin key header validation
@@ -466,7 +469,7 @@ With the server running, ingest a document to build the knowledge base.
 **Using curl (terminal):**
 ```bash
 curl -X POST http://localhost:8000/admin/upload \
-  -H "X-Admin-API-Key:gh34fd98o8al2c" \
+  -u "admin:your-password" \
   -F "file=@Akash_cv_datalink.pdf"
 ```
 
@@ -580,11 +583,11 @@ curl -X POST http://localhost:8000/api/chat \
 rag-backend/
 ├── app/api/user_routes.py              ← Receives and validates the request
 ├── app/chains/rag_chain.py             ← Runs steps 1 through 7 in sequence
-├── app/services/cache_service.py       ← Step 1: check Redis for cached answer
-├── app/services/memory_service.py      ← Step 2: load session history from Redis
+├── app/services/cache_service.py       ← Step 1: check MongoDB for cached answer
+├── app/services/memory_service.py      ← Step 2: load session history from MongoDB
 ├── app/services/retrieval_service.py   ← Step 3: search Pinecone for relevant chunks
 ├── app/services/generation_service.py  ← Step 4: call GPT-4 with full prompt
-└── app/utils/logger.py                 ← Appends record to logs/conversations.jsonl
+└── app/utils/logger.py                 ← Appends record to MongoDB conversations collection
 ```
 
 ---
@@ -601,6 +604,7 @@ rag-backend/
 | `GET` | `/redoc` | Alternative API reference documentation |
 
 **POST /api/chat — Request body:**
+No authorization is required for `/api/chat` (public endpoint).
 ```json
 {
   "question": "string — required, 1 to 2000 characters",
@@ -609,6 +613,7 @@ rag-backend/
 ```
 
 **POST /api/chat — Response:**
+No authorization is required for `/api/chat` (public endpoint).
 ```json
 {
   "answer": "string",
@@ -621,11 +626,11 @@ rag-backend/
 
 ---
 
-### 🛠️ Admin Endpoints — require `X-Admin-API-Key` header
+### 🛠️ Admin Endpoints — require HTTP Basic Auth
 
 All admin endpoints require this header on every request:
 ```
-X-Admin-API-Key: your-admin-key-from-env
+Use Basic Auth with username + password. Example: `-u "admin:your-password"`
 ```
 
 #### Document Ingestion and Management
@@ -642,17 +647,17 @@ X-Admin-API-Key: your-admin-key-from-env
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/admin/sessions` | List all active session IDs in Redis |
+| `GET` | `/admin/sessions` | List all active session IDs in MongoDB |
 | `GET` | `/admin/sessions/{session_id}` | View full conversation history for a session |
-| `DELETE` | `/admin/sessions/{session_id}` | Delete a session from Redis |
+| `DELETE` | `/admin/sessions/{session_id}` | Delete a session from MongoDB |
 
 #### Logs and Monitoring
 
 | Method | Endpoint | Query Params | Description |
 |---|---|---|---|
-| `GET` | `/admin/logs/conversations` | `?limit=100` | Last N Q&A records from conversations.jsonl |
+| `GET` | `/admin/logs/conversations` | `?limit=100` | Last N Q&A records from MongoDB conversations |
 | `GET` | `/admin/logs/app` | `?lines=100` | Last N lines from app.log |
-| `GET` | `/admin/health` | — | Live connectivity check for Pinecone, Redis, OpenAI |
+| `GET` | `/admin/health` | — | Live connectivity check for Pinecone, MongoDB, OpenAI |
 
 #### Cache
 
@@ -687,14 +692,14 @@ Roll back to va3b1c2d:
 
 ```bash
 curl http://localhost:8000/admin/documents/policy.pdf/versions \
-  -H "X-Admin-API-Key: your-key"
+  -u "admin:your-password"
 ```
 
 ### Roll back to a previous version
 
 ```bash
 curl -X POST "http://localhost:8000/admin/documents/policy.pdf/rollback/va3b1c2d" \
-  -H "X-Admin-API-Key: your-key"
+  -u "admin:your-password"
 ```
 
 ### Where version data is stored
@@ -717,18 +722,18 @@ rag-backend/
 
 ### How it works
 
-Every generated answer is stored in Redis using a SHA-256 hash of the normalized question.
+Every generated answer is stored in MongoDB using a SHA-256 hash of the normalized question.
 
 ```
 User asks:  "What is the refund policy?"
              ↓ normalize: lowercase + trim whitespace
              ↓ SHA-256
-Redis key:  cache:exact:a3f7b2c1d4e5f6...
-Redis value: { "answer": "...", "sources": [...] }
+MongoDB key:  cache:exact:a3f7b2c1d4e5f6...
+MongoDB value: { "answer": "...", "sources": [...] }
 ```
 
 When the same (or identically normalized) question is asked again:
-- Redis returns the cached answer in approximately **5ms**
+- MongoDB returns the cached answer quickly (usually a few ms depending on disk)
 - No OpenAI API call is made — saves cost and time
 
 ### Cache TTL
@@ -740,7 +745,7 @@ After the TTL expires, the next ask re-runs the full RAG pipeline and refreshes 
 
 ```bash
 curl -X DELETE http://localhost:8000/admin/cache/clear \
-  -H "X-Admin-API-Key: your-key" \
+  -u "admin:your-password" \
   -H "Content-Type: application/json" \
   -d '{"confirm": true}'
 ```
@@ -763,7 +768,7 @@ rag-backend/
 
 ## 16. Session Memory
 
-Each user is identified by a `session_id` string that your frontend generates and sends with every message. The full conversation history is stored in Redis and included in every GPT-4 call so the model can reference earlier messages.
+Each user is identified by a `session_id` string that your frontend generates and sends with every message. The full conversation history is stored in MongoDB and included in every GPT-4 call so the model can reference earlier messages.
 
 ### How memory works
 
@@ -777,7 +782,7 @@ Turn 1:
 
 Turn 2:
   User:      "Does that apply to digital products?"
-  History:   2 messages loaded from Redis
+  History:   2 messages loaded from MongoDB
   GPT-4 sees: [System] + [Human: "What is..."] + [AI: "30 days..."] + [Human: "Does that apply..."]
   Answer:    "Yes, the 30-day window applies to digital products as well."  ← context-aware ✅
 ```
@@ -785,14 +790,14 @@ Turn 2:
 ### Session TTL
 
 Default: 24 hours. After no activity for 24 hours, the session is automatically removed
-from Redis. Controlled by `SESSION_TTL_SECONDS` in `.env`.
+from MongoDB. Controlled by `SESSION_TTL_SECONDS` in `.env`.
 
 **Files involved in session memory:**
 ```
 rag-backend/
 ├── app/services/memory_service.py    ← get_session_history(), save_session_history()
 ├── app/chains/rag_chain.py           ← Loads history before and saves after every answer
-└── docker-compose.yml                ← Redis with persistent volume (data survives restarts)
+└── docker-compose.yml                ← MongoDB with persistent volume (data survives restarts)
 ```
 
 ---
@@ -805,9 +810,9 @@ rag-backend/
 |---|---|---|---|
 | System log | `logs/app.log` | Startup events, requests, warnings, errors | 10MB → zipped, kept 30 days |
 | Access log | `logs/access.log` | HTTP request log from Gunicorn | Docker mode only |
-| Conversations | `logs/conversations.jsonl` | Every Q&A with full metadata | Manual — grows indefinitely |
+| Conversations | `MongoDB conversations collection` | Every Q&A with full metadata | Manual — grows indefinitely |
 
-### conversations.jsonl format
+### MongoDB conversations format
 
 Each line is one complete Q&A record in JSON format:
 ```json
@@ -827,18 +832,18 @@ Each line is one complete Q&A record in JSON format:
 ```bash
 # Last 50 conversation records (newest first)
 curl "http://localhost:8000/admin/logs/conversations?limit=50" \
-  -H "X-Admin-API-Key: your-key"
+  -u "admin:your-password"
 
 # Last 100 system log lines (newest first)
 curl "http://localhost:8000/admin/logs/app?lines=100" \
-  -H "X-Admin-API-Key: your-key"
+  -u "admin:your-password"
 ```
 
 ### Health check
 
 ```bash
 curl http://localhost:8000/admin/health \
-  -H "X-Admin-API-Key: your-key"
+  -u "admin:your-password"
 ```
 
 Expected when everything is healthy:
@@ -846,7 +851,7 @@ Expected when everything is healthy:
 {
   "status": "healthy",
   "pinecone": "ok",
-  "redis": "ok",
+  "mongodb": "ok",
   "openai": "ok"
 }
 ```
@@ -886,7 +891,7 @@ OPENAI_API_KEY=sk-... pytest tests/ -v
 |---|---|---|
 | `tests/test_chat.py` | Missing question → 422, missing session → 422, full response shape | Live test only |
 | `tests/test_ingestion.py` | No auth → 403, CSV file → 400, TXT upload end-to-end | Live test only |
-| `tests/test_cache.py` | Key determinism, normalization equality, Redis set and get | Redis test only |
+| `tests/test_cache.py` | Key determinism, normalization equality, MongoDB set and get | MongoDB test only |
 
 **Files active when running tests:**
 ```
@@ -909,7 +914,7 @@ A standalone single-file browser tool for testing your backend before connecting
 2. Double-click to open in any browser — no server or install needed
 3. Enter your backend URL (e.g. `http://localhost:8000`)
 4. Click **⚡ Ping** to verify connection
-5. Enter your `ADMIN_API_KEY`
+5. Enter your `ADMIN_USERNAME / ADMIN_PASSWORD`
 6. Drag and drop documents to upload them
 7. Type questions in the chat panel
 
@@ -950,7 +955,7 @@ Settings are saved to browser localStorage so you do not need to re-enter them o
 | **Dashboard** | `/` | System health cards, stats grid, activity chart, recent conversations |
 | **Knowledge Base** | `/knowledge` | Upload documents with progress bar, view inventory, browse version history |
 | **Documents** | `/documents` | Delete documents, rollback versions — intentionally a separate danger zone |
-| **Sessions** | `/sessions` | Search sessions, inspect full conversation history, view Redis memory, delete sessions |
+| **Sessions** | `/sessions` | Search sessions, inspect full conversation history, view MongoDB memory, delete sessions |
 | **System Logs** | `/logs` | App logs colored by level (INFO/WARNING/ERROR), conversation logs with search and date filter |
 | **Cache** | `/cache` | Cache stats, guidance on when to clear, clear button with confirmation |
 
@@ -1006,7 +1011,7 @@ Go through every item before serving real users:
 
 ```
 Security
-  [ ] Set a strong ADMIN_API_KEY in .env (use 32+ random characters)
+  [ ] Set a strong ADMIN_USERNAME / ADMIN_PASSWORD in .env (use 32+ random characters)
   [ ] Lock CORS in main.py to your actual frontend domain
         Change: allow_origins=["*"]
         To:     allow_origins=["https://yourwebsite.com"]
@@ -1022,15 +1027,16 @@ Knowledge Base
   [ ] All documents uploaded via POST /admin/upload
   [ ] Each upload returns a reasonable chunk count (roughly 1 chunk per paragraph)
   [ ] Test 10+ real questions via POST /api/chat and verify answers are accurate
+No authorization is required for `/api/chat` (public endpoint).
 
 Monitoring
   [ ] logs/app.log exists and is being written to
-  [ ] logs/conversations.jsonl records appear after the first chat request
+  [ ] MongoDB conversations collection records appear after the first chat request
   [ ] data/document_registry.json exists after the first upload
   [ ] curl localhost:8000/admin/logs/conversations returns real records
 
 Ongoing
-  [ ] Schedule regular review of conversations.jsonl for business insights
+  [ ] Schedule regular review of MongoDB conversations for business insights
   [ ] Clear cache after every knowledge base update
   [ ] Monitor logs/app.log for ERROR entries after any code change
 ```
@@ -1041,7 +1047,7 @@ Ongoing
 
 ### Current capacity
 
-The default setup (4 Gunicorn workers + single Redis) handles approximately **50 concurrent users** comfortably with sub-2-second response times on cache misses.
+The default setup (4 Gunicorn workers + single MongoDB) handles approximately **50 concurrent users** comfortably with sub-2-second response times on cache misses.
 
 ### Increasing capacity
 
@@ -1061,10 +1067,10 @@ app:
 Add a load balancer (nginx or AWS ALB) in front of the replicas.
 
 **500+ concurrent users — managed cloud infrastructure:**
-- Redis → AWS ElastiCache or Redis Cloud (shared across all app instances)
+- MongoDB → MongoDB Atlas or a self-managed replica set
 - App → AWS ECS, GCP Cloud Run, or Kubernetes
 - Logs → AWS CloudWatch or Datadog (add handler in `app/utils/logger.py`)
-- Large file ingestion → Celery + Redis task queue (background processing)
+- Large file ingestion → Celery + RabbitMQ or SQS (background processing)
 
 ### Easy future enhancements
 
@@ -1101,12 +1107,12 @@ Fix:     Check PINECONE_API_KEY and PINECONE_INDEX_NAME in .env
          Verify PINECONE_ENVIRONMENT matches the index region exactly
 ```
 
-**Error: Redis connection refused**
+**Error: MongoDB connection refused**
 ```
-Cause:   Redis is not running
-Fix (Docker):  docker-compose up -d redis
-Fix (macOS):   brew services start redis
-Fix (Linux):   sudo service redis-server start
+Cause:   MongoDB is not running
+Fix (Docker):  docker-compose up -d mongodb
+Fix (macOS):   brew services start MongoDB
+Fix (Linux):   sudo service MongoDB-server start
 ```
 
 ### Upload fails
@@ -1127,21 +1133,21 @@ Fix:    Increase MAX_UPLOAD_SIZE_MB in .env and restart the server
 ```
 Cause:  Usually OpenAI API key invalid, Pinecone index not found, or quota exceeded
 Fix:    Check logs/app.log for the specific error message
-        Run the health check: curl localhost:8000/admin/health -H "X-Admin-API-Key: key"
+        Run the health check: curl localhost:8000/admin/health -u "admin:your-password"
 ```
 
 ### Chat returns wrong or outdated answers
 
 **Possible cause 1 — Document not uploaded:**
 ```bash
-curl http://localhost:8000/admin/documents -H "X-Admin-API-Key: key"
+curl http://localhost:8000/admin/documents -u "admin:your-password"
 # Check that your document appears in the list
 ```
 
 **Possible cause 2 — Cache serving old answer:**
 ```bash
 curl -X DELETE localhost:8000/admin/cache/clear \
-  -H "X-Admin-API-Key: key" \
+  -u "admin:your-password" \
   -H "Content-Type: application/json" \
   -d '{"confirm": true}'
 ```
@@ -1160,9 +1166,9 @@ Fix: Increase CHUNK_SIZE from 500 to 800 in .env
 ### Admin endpoints return 403
 
 ```
-Cause:  X-Admin-API-Key header is missing or incorrect
-Fix:    Check your header: -H "X-Admin-API-Key: value-from-your-env"
-        The value must match ADMIN_API_KEY in .env exactly
+Cause:  Basic Auth credentials are missing or incorrect
+Fix:    Check your header: -u "admin:your-password"
+        The value must match ADMIN_USERNAME / ADMIN_PASSWORD in .env exactly
 ```
 
 ---
@@ -1182,15 +1188,15 @@ docker-compose down
 docker-compose logs -f app
 
 # Health check
-curl localhost:8000/admin/health -H "X-Admin-API-Key: YOUR_KEY"
+curl localhost:8000/admin/health -u "admin:your-password"
 
 # Upload a document
 curl -X POST localhost:8000/admin/upload \
-  -H "X-Admin-API-Key: YOUR_KEY" \
+  -u "admin:your-password" \
   -F "file=@/path/to/file.pdf"
 
 # List all documents
-curl localhost:8000/admin/documents -H "X-Admin-API-Key: YOUR_KEY"
+curl localhost:8000/admin/documents -u "admin:your-password"
 
 # Test chat
 curl -X POST localhost:8000/api/chat \
@@ -1199,22 +1205,22 @@ curl -X POST localhost:8000/api/chat \
 
 # Clear cache
 curl -X DELETE localhost:8000/admin/cache/clear \
-  -H "X-Admin-API-Key: YOUR_KEY" \
+  -u "admin:your-password" \
   -H "Content-Type: application/json" \
   -d '{"confirm":true}'
 
 # View last 20 conversations
-curl "localhost:8000/admin/logs/conversations?limit=20" -H "X-Admin-API-Key: YOUR_KEY"
+curl "localhost:8000/admin/logs/conversations?limit=20" -u "admin:your-password"
 
 # View last 50 system log lines
-curl "localhost:8000/admin/logs/app?lines=50" -H "X-Admin-API-Key: YOUR_KEY"
+curl "localhost:8000/admin/logs/app?lines=50" -u "admin:your-password"
 
 # List document versions
-curl "localhost:8000/admin/documents/file.pdf/versions" -H "X-Admin-API-Key: YOUR_KEY"
+curl "localhost:8000/admin/documents/file.pdf/versions" -u "admin:your-password"
 
 # Rollback document to a version
 curl -X POST "localhost:8000/admin/documents/file.pdf/rollback/va3b1c2d" \
-  -H "X-Admin-API-Key: YOUR_KEY"
+  -u "admin:your-password"
 
 # Run tests
 pytest tests/ -v
@@ -1226,3 +1232,8 @@ open http://localhost:8000/docs
 cd optional/admin-panel && npm install && npm run dev
 # Then open http://localhost:3001
 ```
+
+
+
+In Swagger UI (/docs), when you click Authorize, it shows the token because Swagger wants you to paste it manually.
+In the admin panel, you only enter username + password. The panel uses HTTP Basic Auth with the username and password you enter.
