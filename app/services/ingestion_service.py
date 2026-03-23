@@ -2,9 +2,9 @@ import uuid
 import asyncio
 from pathlib import Path
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
 
-from langchain_community.document_loaders import PyMuPDFLoader, TextLoader
+from langchain_community.document_loaders import PyMuPDFLoader, TextLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_pinecone import PineconeVectorStore
 
@@ -34,10 +34,20 @@ def _load_and_split(file_path: str, filename: str, version_id: str):
         loader = PyMuPDFLoader(file_path)
     elif ext == ".txt":
         loader = TextLoader(file_path, encoding="utf-8")
+    elif ext == ".docx":
+        loader = Docx2txtLoader(file_path)
     else:
-        raise ValueError(f"Unsupported file type: {ext}. Only PDF and TXT are supported.")
+        raise ValueError(f"Unsupported file type: {ext}. Only PDF, TXT, and DOCX are supported.")
 
-    documents = loader.load()
+    try:
+        documents = loader.load()
+    except ModuleNotFoundError as e:
+        if ext == ".docx":
+            raise ModuleNotFoundError(
+                "DOCX support requires 'docx2txt'. Install it in the active runtime with: "
+                "pip install docx2txt==0.8"
+            ) from e
+        raise
     splitter = _get_splitter()
     chunks = splitter.split_documents(documents)
 
@@ -53,7 +63,11 @@ def _load_and_split(file_path: str, filename: str, version_id: str):
     return chunks, vector_ids
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_not_exception_type((ValueError, ModuleNotFoundError)),
+)
 async def ingest_document(file_path: str, filename: str) -> int:
     """
     Full ingestion pipeline:

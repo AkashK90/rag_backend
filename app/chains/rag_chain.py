@@ -1,13 +1,13 @@
 import time
+import asyncio
 from loguru import logger
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from app.services.cache_service import get_cached_answer, set_cached_answer
 from app.services.memory_service import get_session_history, save_session_history
 from app.services.retrieval_service import retrieve_relevant_chunks
-from app.services.generation_service import generate_answer
+from app.services.generation_service import generate_answer, FALLBACK_ANSWER
 from app.utils.logger import log_conversation
-
 
 async def run_rag_chain(question: str, session_id: str) -> dict:
     """
@@ -17,7 +17,6 @@ async def run_rag_chain(question: str, session_id: str) -> dict:
     3. Retrieve relevant chunks from Pinecone
     4. Generate answer with GPT-4
     5. Update memory + cache + log
-
     Returns dict with answer, sources, response_time_ms, cache_hit
     """
     start_time = time.time()
@@ -26,14 +25,14 @@ async def run_rag_chain(question: str, session_id: str) -> dict:
     cached = await get_cached_answer(question)
     if cached:
         elapsed = int((time.time() - start_time) * 1000)
-        await log_conversation(
+        asyncio.create_task(log_conversation(
             session_id=session_id,
             question=question,
             answer=cached["answer"],
             sources=cached["sources"],
             response_time_ms=elapsed,
             cache_hit=True,
-        )
+        ))
         return {**cached, "cache_hit": True, "response_time_ms": elapsed}
 
     # ── Step 2: Load session memory ───────────────────
@@ -55,18 +54,20 @@ async def run_rag_chain(question: str, session_id: str) -> dict:
 
     # ── Step 6: Cache the result ──────────────────────
     result = {"answer": answer, "sources": sources}
-    await set_cached_answer(question, result)
+    # Do not cache fallback responses; they often come from weak retrieval context.
+    if answer.strip() != FALLBACK_ANSWER:
+        await set_cached_answer(question, result)
 
     # ── Step 7: Log conversation ──────────────────────
     elapsed = int((time.time() - start_time) * 1000)
-    await log_conversation(
+    asyncio.create_task(log_conversation(
         session_id=session_id,
         question=question,
         answer=answer,
         sources=sources,
         response_time_ms=elapsed,
         cache_hit=False,
-    )
+    ))
     logger.info(f"RAG chain completed in {elapsed}ms for session {session_id}")
 
     return {

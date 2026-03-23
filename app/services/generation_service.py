@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, Base
 from app.core.config import get_settings
 
 settings = get_settings()
+FALLBACK_ANSWER = "I don't have enough information in my knowledge base to answer that."
 
 SYSTEM_PROMPT = """You are a helpful, empathetic, professional AI assistant.
 Answer the user's question using ONLY the context provided below.
@@ -29,7 +30,8 @@ def _build_llm() -> ChatOpenAI:
     return ChatOpenAI(
         model=settings.openai_chat_model,
         openai_api_key=settings.openai_api_key,
-        temperature=0.2,
+        temperature=0.7,
+        max_tokens=1000,
         request_timeout=30,
         max_retries=2,
     )
@@ -49,7 +51,7 @@ async def generate_answer(
 
     # Build context string
     if not context_texts:
-        return "I don't have enough information in my knowledge base to answer that."
+        return FALLBACK_ANSWER
     context = "\n\n---\n\n".join(context_texts)
 
     # System message with injected context

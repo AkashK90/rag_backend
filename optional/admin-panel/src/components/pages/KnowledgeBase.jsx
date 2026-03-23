@@ -41,9 +41,13 @@ export default function KnowledgeBase() {
   useEffect(() => { load() }, [])
 
   const handleFiles = async (files) => {
-    const allowed = ['application/pdf', 'text/plain']
+    const allowed = [
+      'application/pdf',
+      'text/plain',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]
     const valid = [...files].filter(f => allowed.includes(f.type))
-    if (!valid.length) { toast.warn('Only PDF and TXT files are supported.'); return }
+    if (!valid.length) { toast.warn('Only PDF, TXT, and DOCX files are supported.'); return }
     setUploading(true)
     for (const file of valid) {
       setProgress(0)
@@ -116,7 +120,7 @@ export default function KnowledgeBase() {
           </Button>
         }
       />
-      <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt" style={{ display: 'none' }}
+      <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.docx" style={{ display: 'none' }}
         onChange={e => handleFiles(e.target.files)} />
 
       {/* Stats row */}
@@ -153,10 +157,10 @@ export default function KnowledgeBase() {
           <>
             <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.5 }}>📄</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-              Drop PDF or TXT files here
+              Drop PDF, TXT, or DOCX files here
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              or click to browse — max {50}MB per file
+              or click to browse - max {50}MB per file
             </div>
           </>
         )}
@@ -174,7 +178,7 @@ export default function KnowledgeBase() {
           <EmptyState
             icon="📭"
             title="No documents ingested"
-            description="Upload PDF or TXT files above to build your knowledge base."
+            description="Upload PDF, TXT, or DOCX files above to build your knowledge base."
           />
         ) : (
           <Table

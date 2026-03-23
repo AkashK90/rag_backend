@@ -19,10 +19,11 @@ class Settings(BaseSettings):
 
     # Admin
     admin_username: str = "admin"
-    admin_password: str = "change-me"
+    admin_password: str = "admin123"
 
     # App
     app_env: str = 'development'  # "production"
+    cors_allow_origins: str = "http://localhost:3001,http://127.0.0.1:3001,https://partners.bncglobal.in"
     log_level: str = "INFO"
     max_upload_size_mb: int = 50
     chunk_size: int = 800
@@ -34,7 +35,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-
 
 @lru_cache()
 def get_settings() -> Settings:

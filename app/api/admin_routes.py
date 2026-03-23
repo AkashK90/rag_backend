@@ -28,12 +28,16 @@ MAX_BYTES = settings.max_upload_size_mb * 1024 * 1024
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
     """
-    🛠️ Upload a PDF or TXT file to ingest into the knowledge base.
+    🛠️ Upload a PDF, TXT, or DOCX file to ingest into the knowledge base.
     Protected by HTTP Basic Auth.
     """
-    allowed_types = {"application/pdf", "text/plain"}
+    allowed_types = {
+        "application/pdf",
+        "text/plain",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
     if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Only PDF and TXT files are supported.")
+        raise HTTPException(status_code=400, detail="Only PDF, TXT, and DOCX files are supported.")
 
     content = await file.read()
     if len(content) > MAX_BYTES:
